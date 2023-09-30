@@ -1,4 +1,4 @@
-local super73_subdissector = Proto("Super73", "Super73 RX CAN Bus")
+local super73_proto = Proto("Super73", "Super73 RX CAN Bus")
 
 local fields = {
     id = ProtoField.uint32("super73.id", "ID", base.HEX),
@@ -49,13 +49,13 @@ local devices = {
 local f_can_id = Field.new("can.id")
 local f_can_len = Field.new("can.len")
 
-super73_subdissector.fields = fields
+super73_proto.fields = fields
 
 function is_request(frame_length)
     return frame_length == 0
 end
 
-function super73_subdissector.dissector(buffer, pinfo, tree)
+function super73_proto.dissector(buffer, pinfo, tree)
     local id = f_can_id().value
     local frame_length = f_can_len().value
     local frame_is_request = is_request(frame_length)
@@ -69,7 +69,7 @@ function super73_subdissector.dissector(buffer, pinfo, tree)
         data = buffer(0, frame_length)
     end
 
-    local subtree = tree:add(super73_subdissector, buffer)
+    local subtree = tree:add(super73_proto, buffer)
     subtree:add(fields.id, id)
 
     local device = devices[id]
@@ -110,5 +110,5 @@ function super73_subdissector.dissector(buffer, pinfo, tree)
 end
 
 for id in pairs(devices) do
-    DissectorTable.get("can.id"):add(id, super73_subdissector)
+    DissectorTable.get("can.id"):add(id, super73_proto)
 end

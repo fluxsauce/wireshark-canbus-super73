@@ -16,12 +16,15 @@ local fields = {
     data_1_2_sum = ProtoField.uint16("super73.data_1_2_sum", "D1D2 Sum", base.DEC),
     data_3_4_sum = ProtoField.uint16("super73.data_3_4_sum", "D3D4 Sum", base.DEC),
     data_5_6_sum = ProtoField.uint16("super73.data_5_6_sum", "D5D6 Sum", base.DEC),
-    data_7_8_sum = ProtoField.uint16("super73.data_7_8_sum", "D7D8 Sum", base.DEC)
+    data_7_8_sum = ProtoField.uint16("super73.data_7_8_sum", "D7D8 Sum", base.DEC),
+    speed = ProtoField.string("super73.speed", "Speed"),
+    brake = ProtoField.string("super73.brake", "Brake"),
+    data_decoded = ProtoField.string("super73.data_decoded", "Data Decoded")
 }
 
 local devices = {
     [0x200] = { device = "Controller", subdevice = "Range or ODO?" },
-    [0x201] = { device = "Controller", subdevice = "Speed, Brake, ..." },
+    [0x201] = { device = "Controller", subdevice = "Speed, Brake" },
     [0x202] = { device = "Controller", subdevice = "TBD" },
     [0x210] = {
         request = "Request Data",
@@ -55,7 +58,7 @@ function is_request(frame_length)
     return frame_length == 0
 end
 
-function super73_proto.dissector(buffer, pinfo, tree)
+function super73_proto.dissector(tvb, pinfo, tree)
     local id = f_can_id().value
     local frame_length = f_can_len().value
     local frame_is_request = is_request(frame_length)
@@ -66,10 +69,10 @@ function super73_proto.dissector(buffer, pinfo, tree)
     if (frame_is_request) then
         -- TODO: access can.padding somehow
     else
-        data = buffer(0, frame_length)
+        data = tvb(0, frame_length)
     end
 
-    local subtree = tree:add(super73_proto, buffer)
+    local subtree = tree:add(super73_proto, tvb)
     subtree:add(fields.id, id)
 
     local device = devices[id]
@@ -100,6 +103,22 @@ function super73_proto.dissector(buffer, pinfo, tree)
                 local sum = data(i-1, 1):uint() + data(i, 1):uint()
                 subtree:add(fields["data_" .. i .. "_" .. i+1 .. "_sum"], sum)
             end
+        end
+
+        -- Data: Decoded
+        if (id == 0x201) then
+            local speed = data(0, 2):le_uint() / 100;
+            subtree:add(fields.speed, speed)
+            local brake_value = data(4, 1):uint();
+            if (brake_value == 0x60) then
+                brake = "Off"
+            elseif (brake_value == 0x64) then
+                brake = "On"
+            else
+                brake = "Unknown"
+            end
+            subtree:add(fields.brake, brake)
+            subtree:add(fields.data_decoded, "Speed: " .. speed .. " Brake: " .. brake)
         end
     else
         subtree:add(fields.device_name, "Unknown")

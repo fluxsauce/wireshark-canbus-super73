@@ -23,6 +23,12 @@ local devices = {
     [0x200] = { device = "Controller", subdevice = "Range or ODO?" },
     [0x201] = { device = "Controller", subdevice = "Speed, Brake, ..." },
     [0x202] = { device = "Controller", subdevice = "TBD" },
+    [0x210] = {
+        request = "Request Data",
+        requestor = "Display",
+        response = "Response Data",
+        respondor = "Controller"
+    },
     [0x222] = { device = "Controller", subdevice = "Throttle" },
     [0x300] = { device = "Display", subdevice = "Stats" },
     [0x302] = { device = "Display", subdevice = "TBD" },
@@ -45,10 +51,23 @@ local f_can_len = Field.new("can.len")
 
 super73_subdissector.fields = fields
 
+function is_request(frame_length)
+    return frame_length == 0
+end
+
 function super73_subdissector.dissector(buffer, pinfo, tree)
     local id = f_can_id().value
-    local len = f_can_len().value
-    local data = buffer(0, len) -- Get the data frame
+    local frame_length = f_can_len().value
+    local frame_is_request = is_request(frame_length)
+
+    local data
+    
+    -- Special case; read padding as data.
+    if (frame_is_request) then
+        -- TODO: access can.padding somehow
+    else
+        data = buffer(0, frame_length)
+    end
 
     local subtree = tree:add(super73_subdissector, buffer)
     subtree:add(fields.id, id)
@@ -56,15 +75,28 @@ function super73_subdissector.dissector(buffer, pinfo, tree)
     local device = devices[id]
     if device then
         -- Device and Subdevice
-        subtree:add(fields.device_name, device.device)
-        subtree:add(fields.subdevice_name, device.subdevice)
+        if (frame_is_request) then
+            subtree:add(fields.device_name, device.request)
+            subtree:add(fields.subdevice_name, device.requestor)
+        else
+            if (device.device) then
+                subtree:add(fields.device_name, device.device)
+                subtree:add(fields.subdevice_name, device.subdevice)
+            else
+                -- Response
+                subtree:add(fields.device_name, device.response)
+                subtree:add(fields.subdevice_name, device.respondor)
+            end
+        end
 
         -- Data: ASCII
-        subtree:add(fields.data_ascii, tostring(data:string()))
+        if (not frame_is_request) then
+            subtree:add(fields.data_ascii, tostring(data:string()))
+        end
         -- Data: Hex and Pair Sums
-        for i = 1, len do
+        for i = 1, frame_length do
             subtree:add(fields["data_" .. i], data(i-1, 1))
-            if i % 2 == 1 and i < len then -- Check if i is odd and there is a next byte
+            if i % 2 == 1 and i < frame_length then -- Check if i is odd and there is a next byte
                 local sum = data(i-1, 1):uint() + data(i, 1):uint()
                 subtree:add(fields["data_" .. i .. "_" .. i+1 .. "_sum"], sum)
             end

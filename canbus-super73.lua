@@ -13,12 +13,15 @@ local fields = {
     data_7 = ProtoField.uint8("super73.data_7", "D7", base.HEX),
     data_8 = ProtoField.uint8("super73.data_8", "D8", base.HEX),
     data_ascii = ProtoField.string("super73.data_ascii", "Data ASCII"),
-    data_1_2_sum = ProtoField.uint16("super73.data_1_2_sum", "D1D2 Sum", base.DEC),
-    data_3_4_sum = ProtoField.uint16("super73.data_3_4_sum", "D3D4 Sum", base.DEC),
-    data_5_6_sum = ProtoField.uint16("super73.data_5_6_sum", "D5D6 Sum", base.DEC),
-    data_7_8_sum = ProtoField.uint16("super73.data_7_8_sum", "D7D8 Sum", base.DEC),
+    data_1_2_le = ProtoField.uint16("super73.data_1_2_le", "D1D2 LE", base.DEC),
+    data_3_4_le = ProtoField.uint16("super73.data_3_4_le", "D3D4 LE", base.DEC),
+    data_5_6_le = ProtoField.uint16("super73.data_5_6_le", "D5D6 LE", base.DEC),
+    data_7_8_le = ProtoField.uint16("super73.data_7_8_le", "D7D8 LE", base.DEC),
     speed = ProtoField.string("super73.speed", "Speed"),
     brake = ProtoField.string("super73.brake", "Brake"),
+    throttle_threshold = ProtoField.uint16("super73.throttle_threshold", "Throttle Threshold", base.DEC),
+    throttle_raw = ProtoField.uint16("super73.throttle_raw", "Throttle Raw", base.DEC),
+    throttle_percent = ProtoField.string("super73.throttle_percent", "Throttle Percent"),
     data_decoded = ProtoField.string("super73.data_decoded", "Data Decoded")
 }
 
@@ -51,6 +54,7 @@ local devices = {
 
 local f_can_id = Field.new("can.id")
 local f_can_len = Field.new("can.len")
+local f_can_padding = Field.new("can.padding")
 
 super73_proto.fields = fields
 
@@ -67,6 +71,8 @@ function super73_proto.dissector(tvb, pinfo, tree)
     
     -- Special case; read padding as data.
     if (frame_is_request) then
+        data = f_can_padding().value
+        print("Padding:" .. data)
         -- TODO: access can.padding somehow
     else
         data = tvb(0, frame_length)
@@ -96,17 +102,17 @@ function super73_proto.dissector(tvb, pinfo, tree)
         if (not frame_is_request) then
             subtree:add(fields.data_ascii, tostring(data:string()))
         end
-        -- Data: Hex and Pair Sums
+        -- Data: Hex and Little Endian
         for i = 1, frame_length do
             subtree:add(fields["data_" .. i], data(i-1, 1))
             if i % 2 == 1 and i < frame_length then -- Check if i is odd and there is a next byte
-                local sum = data(i-1, 1):uint() + data(i, 1):uint()
-                subtree:add(fields["data_" .. i .. "_" .. i+1 .. "_sum"], sum)
+                subtree:add(fields["data_" .. i .. "_" .. i+1 .. "_le"], data(i-1, 2):le_uint())
             end
         end
 
         -- Data: Decoded
         if (id == 0x201) then
+            -- Speed and Brake
             local speed = data(0, 2):le_uint() / 100;
             subtree:add(fields.speed, speed)
             local brake_value = data(4, 1):uint();
@@ -118,7 +124,22 @@ function super73_proto.dissector(tvb, pinfo, tree)
                 brake = "Unknown"
             end
             subtree:add(fields.brake, brake)
-            subtree:add(fields.data_decoded, "Speed: " .. speed .. " Brake: " .. brake)
+        elseif (id == 0x222) then
+            -- Throttle
+            local threshold = data(0, 2):le_uint();
+            subtree:add(fields.throttle_threshold, threshold)
+
+            local throttle_raw = data(2, 2):le_uint();
+            subtree:add(fields.throttle_raw, throttle_raw)
+
+            local throttle_percent = (throttle_raw - threshold) / (3800 - threshold) * 100;
+            if throttle_percent < 0 then
+                throttle_percent = 0
+            elseif throttle_percent > 100 then
+                throttle_percent = 100
+            end
+            throttle_percent = string.format("%.1f", throttle_percent)
+            subtree:add(fields.throttle_percent, throttle_percent)
         end
     else
         subtree:add(fields.device_name, "Unknown")

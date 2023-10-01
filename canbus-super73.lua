@@ -1,3 +1,9 @@
+-- canbus-super73.lua
+-- By Jon Peck, jpeck@fluxsauce.com
+-- https://sites.google.com/view/super73-reverse-engineering
+-- Thanks to chuckc for Wireshark Lua assistance.
+-- Thanks to wz40ft and blopker collaboration on Super73 CAN bus analysis - https://github.com/blopker/candu/wiki
+
 local super73_proto = Proto("Super73", "Super73 RX CAN Bus")
 local super73_canpad_proto = Proto("Super73CANPadding", "Super73 CAN Padding")
 
@@ -26,7 +32,10 @@ local fields = {
     data_decoded = ProtoField.string("super73.data_decoded", "Data Decoded"),
     can_padding = ProtoField.string("super73.can_padding", "CAN Padding"),
     battery_voltage = ProtoField.string("super73.battery_voltage", "Battery Voltage"),
-    charger_amperage = ProtoField.string("super73.charger_amperage", "Charger Amperage")
+    charger_amperage = ProtoField.string("super73.charger_amperage", "Charger Amperage"),
+    drive_mode = ProtoField.string("super73.drive_mode", "Drive Mode"),
+    headlamp = ProtoField.string("super73.headlamp", "Headlamp"),
+    pas_sensitivity = ProtoField.uint8("super73.pas_sensitivity", "PAS Sensitivity", base.DEC),
 }
 
 local devices = {
@@ -158,6 +167,36 @@ function super73_proto.dissector(tvb, pinfo, tree)
             end
             throttle_percent = string.format("%.1f", throttle_percent)
             subtree:add(fields.throttle_percent, throttle_percent)
+        elseif (id == 0x300) then
+            local drive_mode_raw = data(0, 1)
+            subtree:add(fields.drive_mode, tostring(drive_mode_raw))
+
+            local headlamp_raw = data(2, 1):uint();
+            local headlamp
+            if (headlamp_raw == 0x00) then
+                headlamp = "Off"
+            elseif (headlamp_raw == 0x01) then
+                headlamp = "On"
+            else
+                headlamp = "Unknown"
+            end
+            subtree:add(fields.headlamp, headlamp)
+
+            local pas_sensitivity_raw = data(4, 1):uint();
+            local pas_sensitivity
+            if (pas_sensitivity_raw == 0x00) then
+                pas_sensitivity = 0
+            elseif (pas_sensitivity_raw == 0x0F) then
+                pas_sensitivity = 1
+            elseif (pas_sensitivity_raw == 0x19) then
+                pas_sensitivity = 2
+            elseif (pas_sensitivity_raw == 0x2D) then
+                pas_sensitivity = 3
+            elseif (pas_sensitivity_raw == 0x64) then
+                pas_sensitivity = 4
+            end
+            subtree:add(fields.pas_sensitivity, pas_sensitivity)
+
         elseif (id == 0x401) then
             -- Voltage and Amperage
             local battery_voltage = data(0, 2):le_uint()/1000;

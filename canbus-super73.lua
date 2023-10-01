@@ -24,7 +24,9 @@ local fields = {
     throttle_raw = ProtoField.uint16("super73.throttle_raw", "Throttle Raw", base.DEC),
     throttle_percent = ProtoField.string("super73.throttle_percent", "Throttle Percent"),
     data_decoded = ProtoField.string("super73.data_decoded", "Data Decoded"),
-    can_padding = ProtoField.string("super73.can_padding", "CAN Padding")
+    can_padding = ProtoField.string("super73.can_padding", "CAN Padding"),
+    battery_voltage = ProtoField.string("super73.battery_voltage", "Battery Voltage"),
+    charger_amperage = ProtoField.string("super73.charger_amperage", "Charger Amperage")
 }
 
 local devices = {
@@ -41,7 +43,7 @@ local devices = {
     [0x300] = { device = "Display", subdevice = "Stats" },
     [0x302] = { device = "Display", subdevice = "TBD" },
     [0x400] = { device = "Battery", subdevice = "Charge Status" },
-    [0x401] = { device = "Battery", subdevice = "Voltage, Amperage" },
+    [0x401] = { device = "Battery", subdevice = "Battery Voltage, Charger Amperage" },
     [0x402] = { device = "Battery", subdevice = "State of Charge" },
     [0x403] = { device = "Battery", subdevice = "???" },
     [0x404] = { device = "Battery", subdevice = "Temperature" },
@@ -156,6 +158,12 @@ function super73_proto.dissector(tvb, pinfo, tree)
             end
             throttle_percent = string.format("%.1f", throttle_percent)
             subtree:add(fields.throttle_percent, throttle_percent)
+        elseif (id == 0x401) then
+            -- Voltage and Amperage
+            local battery_voltage = data(0, 2):le_uint()/1000;
+            subtree:add(fields.battery_voltage, battery_voltage)
+            local charger_amperage = data(4, 2):le_uint()/1000;
+            subtree:add(fields.charger_amperage, charger_amperage)
         end
     else
         subtree:add(fields.device_name, "Unknown")

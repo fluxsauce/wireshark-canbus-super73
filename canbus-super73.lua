@@ -1,4 +1,5 @@
 local super73_proto = Proto("Super73", "Super73 RX CAN Bus")
+local super73_canpad_proto = Proto("Super73CANPadding", "Super73 CAN Padding")
 
 local fields = {
     id = ProtoField.uint32("super73.id", "ID", base.HEX),
@@ -22,7 +23,8 @@ local fields = {
     throttle_threshold = ProtoField.uint16("super73.throttle_threshold", "Throttle Threshold", base.DEC),
     throttle_raw = ProtoField.uint16("super73.throttle_raw", "Throttle Raw", base.DEC),
     throttle_percent = ProtoField.string("super73.throttle_percent", "Throttle Percent"),
-    data_decoded = ProtoField.string("super73.data_decoded", "Data Decoded")
+    data_decoded = ProtoField.string("super73.data_decoded", "Data Decoded"),
+    can_padding = ProtoField.string("super73.can_padding", "CAN Padding")
 }
 
 local devices = {
@@ -56,6 +58,10 @@ local f_can_id = Field.new("can.id")
 local f_can_len = Field.new("can.len")
 local f_can_padding = Field.new("can.padding")
 
+-- variables to persist across all packets
+local can_data = {} -- indexed per packet
+can_data.padding = {}
+
 super73_proto.fields = fields
 
 function is_request(frame_length)
@@ -68,18 +74,19 @@ function super73_proto.dissector(tvb, pinfo, tree)
     local frame_is_request = is_request(frame_length)
 
     local data
-    
-    -- Special case; read padding as data.
-    if (frame_is_request) then
-        data = f_can_padding().value
-        print("Padding:" .. data)
-        -- TODO: access can.padding somehow
-    else
-        data = tvb(0, frame_length)
-    end
 
     local subtree = tree:add(super73_proto, tvb)
     subtree:add(fields.id, id)
+
+    -- Special case; read padding as data.
+    if (frame_is_request) then
+        data = can_data.padding[pinfo.number]:tvb()
+        -- For debugging.
+        -- subtree:add(fields.can_padding, tostring(can_data.padding[pinfo.number]))
+        frame_length = 8
+    else
+        data = tvb(0, frame_length)
+    end
 
     local device = devices[id]
     if device then
@@ -99,9 +106,18 @@ function super73_proto.dissector(tvb, pinfo, tree)
         end
 
         -- Data: ASCII
-        if (not frame_is_request) then
+        if (frame_is_request) then
+            local hex_string = tostring(can_data.padding[pinfo.number])
+            local ascii = ""
+            for i = 1, #hex_string, 2 do
+                local hex_pair = hex_string:sub(i, i + 1)
+                ascii = ascii .. string.char(tonumber(hex_pair, 16))
+            end
+            subtree:add(fields.data_ascii, ascii)
+        else
             subtree:add(fields.data_ascii, tostring(data:string()))
         end
+
         -- Data: Hex and Little Endian
         for i = 1, frame_length do
             subtree:add(fields["data_" .. i], data(i-1, 1))
@@ -145,10 +161,19 @@ function super73_proto.dissector(tvb, pinfo, tree)
         subtree:add(fields.device_name, "Unknown")
         subtree:add(fields.subdevice_name, "Unknown")
     end
-
-
 end
 
 for id in pairs(devices) do
     DissectorTable.get("can.id"):add(id, super73_proto)
 end
+
+-- Thanks to chuckc for assistance on this.
+function super73_canpad_proto.dissector(tvb, pinfo, tree)
+    if f_can_padding() ~= nil then
+        can_data.padding[pinfo.number] = f_can_padding().value
+    else
+        can_data.padding[pinfo.number] = nil
+    end
+end
+
+register_postdissector(super73_canpad_proto)

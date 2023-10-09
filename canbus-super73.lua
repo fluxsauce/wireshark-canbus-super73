@@ -48,6 +48,18 @@ local devices = {
         response = "Response Data",
         respondor = "Controller"
     },
+    [0x211] = {
+        request = "Request Data",
+        requestor = "Display",
+        response = "Response Data",
+        respondor = "Controller"
+    },
+    [0x212] = {
+        request = "Request Data",
+        requestor = "Display",
+        response = "Response Data",
+        respondor = "Controller"
+    },
     [0x222] = { device = "Controller", subdevice = "Throttle" },
     [0x300] = { device = "Display", subdevice = "Stats" },
     [0x302] = { device = "Display", subdevice = "TBD" },

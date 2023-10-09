@@ -4,7 +4,7 @@
 -- Thanks to chuckc for Wireshark Lua assistance.
 -- Thanks to wz40ft and blopker collaboration on Super73 CAN bus analysis - https://github.com/blopker/candu/wiki
 
-local super73_proto = Proto("Super73", "Super73 RX CAN Bus")
+local super73_proto = Proto("Super73", "Super73 CAN Bus")
 local super73_canpad_proto = Proto("Super73CANPadding", "Super73 CAN Padding")
 
 local fields = {
@@ -83,7 +83,7 @@ local f_can_padding = Field.new("can.padding")
 
 -- variables to persist across all packets
 local can_data = {} -- indexed per packet
-can_data.padding = {}
+can_data.history = {}
 
 super73_proto.fields = fields
 
@@ -103,9 +103,7 @@ function super73_proto.dissector(tvb, pinfo, tree)
 
     -- Special case; read padding as data.
     if (frame_is_request) then
-        data = can_data.padding[pinfo.number]:tvb()
-        -- For debugging.
-        -- subtree:add(fields.can_padding, tostring(can_data.padding[pinfo.number]))
+        data = can_data.history[id][pinfo.number].padding:tvb()
         frame_length = 8
     else
         data = tvb(0, frame_length)
@@ -130,7 +128,7 @@ function super73_proto.dissector(tvb, pinfo, tree)
 
         -- Data: ASCII
         if (frame_is_request) then
-            local hex_string = tostring(can_data.padding[pinfo.number])
+            local hex_string = tostring(can_data.history[id][pinfo.number].padding)
             local ascii = ""
             for i = 1, #hex_string, 2 do
                 local hex_pair = hex_string:sub(i, i + 1)
@@ -226,12 +224,22 @@ for id in pairs(devices) do
     DissectorTable.get("can.id"):add(id, super73_proto)
 end
 
--- Thanks to chuckc for assistance on this.
 function super73_canpad_proto.dissector(tvb, pinfo, tree)
+    if f_can_id() == nil then
+        return
+    end
+
+    local id = f_can_id().value
+    if can_data.history[id] == nil then
+        can_data.history[id] = {}
+    end
+    if can_data.history[id][pinfo.number] == nil then
+        can_data.history[id][pinfo.number] = {}
+    end
     if f_can_padding() ~= nil then
-        can_data.padding[pinfo.number] = f_can_padding().value
+        can_data.history[id][pinfo.number].padding = f_can_padding().value
     else
-        can_data.padding[pinfo.number] = nil
+        can_data.history[id][pinfo.number].padding = nil
     end
 end
 

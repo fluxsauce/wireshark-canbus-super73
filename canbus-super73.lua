@@ -1,8 +1,12 @@
 -- canbus-super73.lua
 -- By Jon Peck, jpeck@fluxsauce.com
--- https://sites.google.com/view/super73-reverse-engineering
--- Thanks to chuckc for Wireshark Lua assistance.
--- Thanks to wz40ft and blopker collaboration on Super73 CAN bus analysis - https://github.com/blopker/candu/wiki
+-- https://github.com/fluxsauce/wireshark-canbus-super73
+
+set_plugin_info({
+    version = "0.1.0",
+    author = "Jon Peck",
+    description = "Super73 CAN Bus Dissector",
+})
 
 local super73_proto = Proto("Super73", "Super73 CAN Bus")
 local super73_canpad_proto = Proto("Super73CANPadding", "Super73 CAN Padding")
@@ -82,8 +86,9 @@ local f_can_len = Field.new("can.len")
 local f_can_padding = Field.new("can.padding")
 
 -- variables to persist across all packets
-local can_data = {} -- indexed per packet
-can_data.history = {}
+local can_data = {
+    padding = {},
+}
 
 super73_proto.fields = fields
 
@@ -103,7 +108,8 @@ function super73_proto.dissector(tvb, pinfo, tree)
 
     -- Special case; read padding as data.
     if (frame_is_request) then
-        data = can_data.history[id][pinfo.number].padding:tvb()
+        data = can_data.padding[pinfo.number]:tvb()
+        subtree:add(fields.can_padding, tostring(can_data.padding[pinfo.number]))
         frame_length = 8
     else
         data = tvb(0, frame_length)
@@ -128,7 +134,7 @@ function super73_proto.dissector(tvb, pinfo, tree)
 
         -- Data: ASCII
         if (frame_is_request) then
-            local hex_string = tostring(can_data.history[id][pinfo.number].padding)
+            local hex_string = tostring(can_data.padding[pinfo.number])
             local ascii = ""
             for i = 1, #hex_string, 2 do
                 local hex_pair = hex_string:sub(i, i + 1)
@@ -206,7 +212,6 @@ function super73_proto.dissector(tvb, pinfo, tree)
                 pas_sensitivity = 4
             end
             subtree:add(fields.pas_sensitivity, pas_sensitivity)
-
         elseif (id == 0x401) then
             -- Voltage and Amperage
             local battery_voltage = data(0, 2):le_uint()/1000;
@@ -225,21 +230,22 @@ for id in pairs(devices) do
 end
 
 function super73_canpad_proto.dissector(tvb, pinfo, tree)
+    -- Invalid frame; abort.
     if f_can_id() == nil then
         return
     end
 
+    -- Device ID.
     local id = f_can_id().value
-    if can_data.history[id] == nil then
-        can_data.history[id] = {}
-    end
-    if can_data.history[id][pinfo.number] == nil then
-        can_data.history[id][pinfo.number] = {}
-    end
-    if f_can_padding() ~= nil then
-        can_data.history[id][pinfo.number].padding = f_can_padding().value
+
+    local frame_length = f_can_len().value
+    local frame_is_request = is_request(frame_length)
+
+    -- Store frame data and padding to history.
+    if frame_is_request and f_can_padding() ~= nil then
+        can_data.padding[pinfo.number] = f_can_padding().value
     else
-        can_data.history[id][pinfo.number].padding = nil
+        can_data.padding[pinfo.number] = nil
     end
 end
 

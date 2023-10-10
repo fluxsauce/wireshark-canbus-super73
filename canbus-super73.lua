@@ -40,6 +40,8 @@ local fields = {
     drive_mode = ProtoField.string("super73.drive_mode", "Drive Mode"),
     headlamp = ProtoField.string("super73.headlamp", "Headlamp"),
     pas_sensitivity = ProtoField.uint8("super73.pas_sensitivity", "PAS Sensitivity", base.DEC),
+    previous_frame = ProtoField.uint8("super73.previous_frame", "Previous Frame", base.DEC),
+    changed = ProtoField.bool("super73.changed", "Changed"),
 }
 
 local devices = {
@@ -87,6 +89,7 @@ local f_can_padding = Field.new("can.padding")
 
 -- variables to persist across all packets
 local history = {}
+local prev_frames = {}
 
 super73_proto.fields = fields
 
@@ -111,6 +114,21 @@ function super73_proto.dissector(tvb, pinfo, tree)
         frame_length = 8
     else
         data = tvb(0, frame_length)
+    end
+
+    -- Previous frame number
+    local prev_frame = history[id][pinfo.number].previous_frame
+    if prev_frame ~= nil then
+        subtree:add(fields.previous_frame, prev_frame)
+        local previous_data = history[id][pinfo.number].previous_data
+        local changed = false
+        print("pinfo.number", pinfo.number, "id: ", id, "data: ", tostring(data), "previous_data: ", previous_data)
+        if (tostring(data) ~= previous_data) then
+            changed = true
+        end
+        if (changed) then
+            subtree:add(fields.changed, changed)
+        end
     end
 
     local device = devices[id]
@@ -253,6 +271,19 @@ function super73_canpad_proto.dissector(tvb, pinfo, tree)
             history[id][pinfo.number].padding = f_can_padding().value
         else
             history[id][pinfo.number].padding = nil
+        end
+
+        if frame_is_request ~= nil then
+            local prev_frame = prev_frames[id]
+            if prev_frame ~= nil then
+                history[id][pinfo.number].previous_frame = prev_frame.number
+                history[id][pinfo.number].previous_data = prev_frame.data
+            end
+            -- Set new previous frame.
+            prev_frames[id] = {
+                number = pinfo.number,
+                data = tostring(tvb(24, frame_length)),
+            }
         end
     end
 end

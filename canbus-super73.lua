@@ -42,6 +42,7 @@ local fields = {
     pas_sensitivity = ProtoField.uint8("super73.pas_sensitivity", "PAS Sensitivity", base.DEC),
     previous_frame = ProtoField.uint8("super73.previous_frame", "Previous Frame", base.DEC),
     changed = ProtoField.bool("super73.changed", "Changed"),
+    battery_io = ProtoField.string("super73.battery_io", "Battery I/O"),
 }
 
 local devices = {
@@ -69,7 +70,7 @@ local devices = {
     [0x222] = { device = "Controller", subdevice = "Throttle" },
     [0x300] = { device = "Display", subdevice = "Stats" },
     [0x302] = { device = "Display", subdevice = "TBD" },
-    [0x400] = { device = "Battery", subdevice = "Charge Status" },
+    [0x400] = { device = "Battery", subdevice = "I/O Status" },
     [0x401] = { device = "Battery", subdevice = "Battery Voltage, Charger Amperage" },
     [0x402] = { device = "Battery", subdevice = "State of Charge" },
     [0x403] = { device = "Battery", subdevice = "???" },
@@ -122,7 +123,6 @@ function super73_proto.dissector(tvb, pinfo, tree)
         subtree:add(fields.previous_frame, prev_frame)
         local previous_data = history[id][pinfo.number].previous_data
         local changed = false
-        print("pinfo.number", pinfo.number, "id: ", id, "data: ", tostring(data), "previous_data: ", previous_data)
         if (tostring(data) ~= previous_data) then
             changed = true
         end
@@ -228,6 +228,22 @@ function super73_proto.dissector(tvb, pinfo, tree)
                 pas_sensitivity = 4
             end
             subtree:add(fields.pas_sensitivity, pas_sensitivity)
+        elseif (id == 0x400) then
+            local d3 = data(2, 1):uint();
+            local d4 = data(3, 1):uint();
+            local battery_io
+            if (d3 == 0x08 and d4 == 0x00) then
+                battery_io = "Normal"
+            elseif (d3 == 0x8C and d4 == 0x80) then
+                battery_io = "Charging"
+            elseif (d3 == 0x00 and d4 == 0x10) then
+                battery_io = "BMS Blocked"
+            else
+                battery_io = "Unknown"
+            end
+            if (battery_io) then
+                subtree:add(fields.battery_io, battery_io)
+            end
         elseif (id == 0x401) then
             -- Voltage and Amperage
             local battery_voltage = data(0, 2):le_uint()/1000;

@@ -16,13 +16,21 @@ local fields = {
     device_name = ProtoField.string("super73.device", "Device"),
     subdevice_name = ProtoField.string("super73.subdevice", "Subdevice"),
     data_1 = ProtoField.uint8("super73.data_1", "D1", base.HEX),
+    data_1_bitflag = ProtoField.bool("super73.data_1_bitflag", "D1 Bitflag"),
     data_2 = ProtoField.uint8("super73.data_2", "D2", base.HEX),
+    data_2_bitflag = ProtoField.bool("super73.data_2_bitflag", "D2 Bitflag"),
     data_3 = ProtoField.uint8("super73.data_3", "D3", base.HEX),
+    data_3_bitflag = ProtoField.bool("super73.data_3_bitflag", "D3 Bitflag"),
     data_4 = ProtoField.uint8("super73.data_4", "D4", base.HEX),
+    data_4_bitflag = ProtoField.bool("super73.data_4_bitflag", "D4 Bitflag"),
     data_5 = ProtoField.uint8("super73.data_5", "D5", base.HEX),
+    data_5_bitflag = ProtoField.bool("super73.data_5_bitflag", "D5 Bitflag"),
     data_6 = ProtoField.uint8("super73.data_6", "D6", base.HEX),
+    data_6_bitflag = ProtoField.bool("super73.data_6_bitflag", "D6 Bitflag"),
     data_7 = ProtoField.uint8("super73.data_7", "D7", base.HEX),
+    data_7_bitflag = ProtoField.bool("super73.data_7_bitflag", "D7 Bitflag"),
     data_8 = ProtoField.uint8("super73.data_8", "D8", base.HEX),
+    data_8_bitflag = ProtoField.bool("super73.data_8_bitflag", "D8 Bitflag"),
     data_ascii = ProtoField.string("super73.data_ascii", "Data ASCII"),
     data_1_2_le = ProtoField.uint16("super73.data_1_2_le", "D1D2 LE", base.DEC),
     data_3_4_le = ProtoField.uint16("super73.data_3_4_le", "D3D4 LE", base.DEC),
@@ -43,12 +51,15 @@ local fields = {
     previous_frame = ProtoField.uint8("super73.previous_frame", "Previous Frame", base.DEC),
     changed = ProtoField.bool("super73.changed", "Changed"),
     battery_io = ProtoField.string("super73.battery_io", "Battery I/O"),
+    battery_temp_c = ProtoField.string("super73.battery_temp_c", "Battery Temp C"),
 }
 
 local devices = {
     [0x200] = { device = "Controller", subdevice = "Range or ODO?" },
     [0x201] = { device = "Controller", subdevice = "Speed, Brake" },
-    [0x202] = { device = "Controller", subdevice = "TBD" },
+    [0x202] = { device = "Controller", subdevice = "TBD 0x202" },
+    [0x203] = { device = "Controller", subdevice = "TBD 0x203" },
+    [0x204] = { device = "Controller", subdevice = "TBD 0x204" },
     [0x210] = {
         request = "Request Data",
         requestor = "Display",
@@ -68,6 +79,8 @@ local devices = {
         respondor = "Controller"
     },
     [0x222] = { device = "Controller", subdevice = "Throttle" },
+    [0x265] = { device = "Controller", subdevice = "TBD 0x265" },
+    [0x266] = { device = "Controller", subdevice = "TBD 0x266" },
     [0x300] = { device = "Display", subdevice = "Stats" },
     [0x302] = { device = "Display", subdevice = "TBD" },
     [0x400] = { device = "Battery", subdevice = "I/O Status" },
@@ -92,11 +105,37 @@ local f_can_padding = Field.new("can.padding")
 local history = {}
 local prev_frames = {}
 
+function init()
+    history = {}
+    prev_frames = {}
+end
+
 super73_proto.fields = fields
 
 function is_request(frame_length)
     return frame_length == 0
 end
+
+function is_bitflag(value)
+    local hex_values = {
+        0x40, -- equivalent to binary 1000000
+        0x20, -- equivalent to binary 0100000
+        0x10, -- equivalent to binary 0010000
+        0x08, -- equivalent to binary 0001000
+        0x04, -- equivalent to binary 0000100
+        0x02, -- equivalent to binary 0000010
+        0x01, -- equivalent to binary 0000001
+        0x00, -- equivalent to binary 0000000
+    }
+
+    for i = 1, #hex_values do
+      if value == hex_values[i] then
+        return true
+      end
+    end
+
+    return false
+  end
 
 function super73_proto.dissector(tvb, pinfo, tree)
     local id = f_can_id().value
@@ -163,7 +202,9 @@ function super73_proto.dissector(tvb, pinfo, tree)
 
         -- Data: Hex and Little Endian
         for i = 1, frame_length do
-            subtree:add(fields["data_" .. i], data(i-1, 1))
+            local bit = data(i-1, 1);
+            subtree:add(fields["data_" .. i], bit)
+            subtree:add(fields["data_" .. i .. "_bitflag"], is_bitflag(bit:uint()))
             if i % 2 == 1 and i < frame_length then -- Check if i is odd and there is a next byte
                 subtree:add(fields["data_" .. i .. "_" .. i+1 .. "_le"], data(i-1, 2):le_uint())
             end
@@ -250,11 +291,17 @@ function super73_proto.dissector(tvb, pinfo, tree)
             subtree:add(fields.battery_voltage, battery_voltage)
             local charger_amperage = data(4, 2):le_uint()/1000;
             subtree:add(fields.charger_amperage, charger_amperage)
+        elseif (id == 0x404) then
+            -- Temperature
+            local temperature = data(2, 2):le_uint()/10;
+            subtree:add(fields.battery_temp_c, temperature)
         end
     else
         subtree:add(fields.device_name, "Unknown")
         subtree:add(fields.subdevice_name, "Unknown")
     end
+
+    return tree
 end
 
 for id in pairs(devices) do

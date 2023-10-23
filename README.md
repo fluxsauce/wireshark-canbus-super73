@@ -8,6 +8,10 @@ https://sites.google.com/view/super73-reverse-engineering
 
 Copy (or clone) this plugin to your Wireshark Plugin folder. See [Plugin folders](https://www.wireshark.org/docs/wsug_html_chunked/ChPluginFolders.html) for details.
 
+### Examples
+
+In the `examples` folder, there are two capture files from two different Super73 RX e-bikes that are useful for testing and validation.
+
 ## Credit
 
 - Thanks to [chuckcraft](https://gitlab.com/chuckcraft) for Wireshark Lua assistance.

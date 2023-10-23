@@ -105,11 +105,6 @@ local f_can_padding = Field.new("can.padding")
 local history = {}
 local prev_frames = {}
 
-function init()
-    history = {}
-    prev_frames = {}
-end
-
 super73_proto.fields = fields
 
 function is_request(frame_length)
@@ -349,6 +344,11 @@ function super73_canpad_proto.dissector(tvb, pinfo, tree)
             }
         end
     end
+end
+
+function super73_canpad_proto.init()
+    history = {}
+    prev_frames = {}
 end
 
 register_postdissector(super73_canpad_proto)
